@@ -1,0 +1,96 @@
+#include <iostream>
+#include <sstream>
+#include <fstream>
+#include <vector>
+#include <cmath>
+#include "constants.h"
+
+int main(int argc, char** argv) {
+	if(argc<2) {
+		std::cerr << "Usage: " << argv[0] << " <data file>\n";
+		return 1;
+	}
+	std::ifstream in(argv[1]);
+	if(!in) {
+		std::cerr << "Error: could not open file \'" << argv[1] << "\' for reading\n";
+		return 2;
+	}
+
+	std::vector<double> data;
+	double tmp;
+	unsigned int c = 0, cutAt = 5000;
+	while(in >> tmp) {
+		if(c >= cutAt)
+			data.push_back(tmp);
+		++c;
+	}
+	std::cout << "reading " << data.size() << " points" << std::endl;
+	
+	//evaluate average, variance and std deviation
+	const unsigned int n = data.size();
+	double avg = 0., var = 0.;
+	for(double x : data) {
+		avg += x;
+		var += x*x;
+	}
+	avg /= n;
+	var = var/n - avg*avg;
+	double Cv = var / (boxTemp*boxTemp);
+
+	std::cout << "avg " << avg << "\nvar " << var << "\nstddev " << sqrt(var) << std::endl;
+	std::cout << "Cv " << Cv << "\nstddev of mean " << sqrt(var/data.size()) << std::endl;
+
+	//write correlation to file
+	std::string corrFile = "correlation.txt";
+	std::ofstream corrOut(corrFile);
+	for(unsigned int dt = 1; dt < 5000; dt += 1) {
+		//for each dt, evaluate <U(t)U(t+dt)>, <U(t)> and <U(t+dt)>
+		double Ut = 0., Utdt = 0., UtUtdt = 0.;
+		double stdDevUt = 0., stdDevUtdt = 0.;
+		for(unsigned int i=0; i<n-dt; ++i) {
+			double datai = data[i], dataidt = data[i+dt];
+			Ut += datai;
+			stdDevUt += datai*datai;
+			Utdt += dataidt;
+			stdDevUtdt += dataidt*dataidt;
+			UtUtdt += datai*dataidt;
+		}
+		Ut /= n-dt;
+		stdDevUt = stdDevUt/(n-dt) - Ut*Ut;
+		Utdt /= n-dt;
+		stdDevUtdt = stdDevUtdt/(n-dt) - Utdt*Utdt;
+		UtUtdt /= n-dt;
+		// sigmaxy / sigmax*sigmay
+		corrOut << dt << " " << (UtUtdt - Ut*Utdt)/(stdDevUt*stdDevUtdt) << std::endl;
+	}
+	std::cout << "correlation data written in \'" << corrFile << "\'" << std::endl;
+	return 2;
+
+	//write variance over n bins on file
+	std::ofstream outBinning("binning.txt");
+	//for different values of bin length
+	for(unsigned int lBin = 1; lBin < 100000; lBin+=50) {
+		//evaluate number of bins
+		unsigned int nBins = n/lBin;
+		//create vector of binned averages
+		std::vector<double> bins(nBins);
+		//fill vector of binned averages (nBins*lBin != n)
+		for(unsigned int i=0; i<nBins*lBin; ++i) {
+			bins[i/lBin] += data[i];
+		}
+		//divide by bin length all data
+		for(unsigned int i=0; i<nBins; ++i)
+			bins[i] /= lBin;
+		//evaluate variance of members of bins
+		double binAvg = 0., binVar = 0.;
+		for(unsigned int i=0; i<nBins; ++i) {
+			binAvg += bins[i];
+			binVar += bins[i]*bins[i];
+		}
+		binAvg /= nBins;
+		binVar = binVar/nBins - binAvg*binAvg;
+		outBinning << lBin << " " << sqrt(binVar/nBins) << std::endl;
+	}
+
+	return 0;
+}
